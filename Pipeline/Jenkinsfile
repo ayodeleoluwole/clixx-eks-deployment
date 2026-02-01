@@ -1,0 +1,209 @@
+pipeline {
+    agent any
+
+    environment {
+        PATH    = "${PATH}:${getSonarPath()}:${getDockerPath()}:${getTerraformPath()}"
+        VERSION = "1.0.${BUILD_NUMBER}"
+        RUNNER  = "OLUWOLE"
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Sonarcube Scan') {
+            steps {
+                script {
+                    scannerHome = tool 'Sonar-inst'
+                }
+                withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {   withSonarQubeEnv('SonarQubeScanner') {
+                        sh " ${scannerHome}/bin/sonar-scanner \
+                            -Dsonar.projectKey=Clixx-Application \
+                            -Dsonar.token=${SONAR_TOKEN} "
+                    }
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 3, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                slackSend(color: '#FFFF00', message: "BUILDING DOCKER IMAGE by '${env.RUNNER}': Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")
+                sh "docker build . -t clixx-image:$VERSION"
+            }
+        }
+
+        stage('Starting Docker Image') {
+            steps {
+                slackSend(color: '#FFFF00', message: "STARTING DOCKER IMAGE by '${env.RUNNER}': Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")
+                sh '''
+                    if ( docker ps|grep clixx-cont ) then
+                        echo "Docker container exists, killing it"
+                        docker stop clixx-cont
+                        docker rm clixx-cont
+                        docker run --name clixx-cont -p 80:80 -d clixx-image:$VERSION
+                    else
+                        docker run --name clixx-cont -p 80:80 -d clixx-image:$VERSION
+                    fi
+                '''
+            }
+        }
+
+        stage('Tear Down CliXX Docker Image') {
+            steps {
+                slackSend(color: '#FFFF00', message: "TEARING DOWN DOCKER IMAGE by '${env.RUNNER}': Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")
+                script {
+                    def userInput = input(id: 'confirm', message: 'Please Test CliXX Image Deployment First. Should I delete now?', parameters: [[$class: 'BooleanParameterDefinition', defaultValue: false, description: 'Tear Down App', name: 'confirm']])
+                }
+                sh "docker stop clixx-cont"
+                sh "docker rm clixx-cont"
+            }
+        }
+
+        stage('Log Into ECR and Push the Newly Created Docker') {
+            steps {
+                slackSend(color: '#FFFF00', message: "PUSHING LATEST IMAGE TO ECR by '${env.RUNNER}': Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")
+                script {
+                    def userInput = input(id: 'confirm', message: 'Push Image To ECR?', parameters: [[$class: 'BooleanParameterDefinition', defaultValue: false, description: 'Push to ECR?', name: 'confirm']])
+                }
+                sh '''
+                    set -e
+                    STATE=$(aws s3 cp s3://mystatefile-clixxretail/eks/base_infra/terraform.tfstate -)
+                    ECR_URI=$(echo $STATE | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['outputs']['ecr_repository_url']['value'])")
+
+                    aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin ${ECR_URI}
+                    docker tag clixx-image:$VERSION ${ECR_URI}:clixx-image-$VERSION
+                    docker tag clixx-image:$VERSION ${ECR_URI}:latest
+                    docker push ${ECR_URI}:clixx-image-$VERSION
+                    docker push ${ECR_URI}:latest
+                '''
+            }
+        }
+
+
+        stage('Configure kubectl') {
+            steps {
+                slackSend(color: '#FFFF00', message: "CONFIGURE KUBECTL TO USE EKS CLUSTER by '${env.RUNNER}': Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")               
+                    // Connect kubectl to the EKS cluster
+                    sh '''
+                        set -e
+                        STATE=$(aws s3 cp s3://mystatefile-clixxretail/eks/base_infra/terraform.tfstate -)
+                        CLUSTER_NAME=$(echo $STATE | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['outputs']['cluster_name']['value'])")
+
+                        aws eks update-kubeconfig \
+                            --region us-east-2 \
+                            --name ${CLUSTER_NAME}
+                    '''
+                }
+        }
+        
+
+        stage('Deploy to EKS') {
+            steps {
+                slackSend(color: '#FFFF00', message: "DEPLOYING APPLICATION LATEST VERSION VIA EKS by '${env.RUNNER}': Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")
+                script {
+                    def userInput = input(id: 'confirm', message: 'Deploy latest image to EKS?', parameters: [[$class: 'BooleanParameterDefinition', defaultValue: false, description: 'Deploy to EKS', name: 'confirm']])
+                }
+                sh '''
+                    set -e
+                    STATE=$(aws s3 cp s3://mystatefile-clixxretail/eks/base_infra/terraform.tfstate -)
+                    ECR_URI=$(echo $STATE | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['outputs']['ecr_repository_url']['value'])")
+
+
+                    # Injecting the ECR image URI into deployment.yaml at runtime
+                    sed -i "s|DOCKER_IMAGE|${ECR_URI}:clixx-image-$VERSION|g" \
+                    clixx_eks_deployment/k8s/deployment.yaml
+
+                    # Apply all YAML files
+                    kubectl apply -f clixx_eks_deployment/k8s/namespace.yaml
+                    kubectl apply -f clixx_eks_deployment/k8s/deployment.yaml
+                    kubectl apply -f clixx_eks_deployment/k8s/service.yaml
+                    kubectl apply -f clixx_eks_deployment/k8s/ingress.yaml
+
+                    # Wait for rollout to complete
+                    kubectl rollout status deployment/clixx-app \
+                        -n clixx \
+                        --timeout=120s
+
+                    echo "EKS successfully deployed latest image"
+                '''
+                slackSend(color: '#FFFF00', message: "APPLICATION DEPLOYMENT COMPLETED by '${env.RUNNER}': Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")
+            }
+        }
+
+
+        stage('Configure RDS Database for Production') {
+            steps {
+                slackSend(color: '#FFFF00', message: "CONFIGURING DATABASE FOR PRODUCTION by '${env.RUNNER}': Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")
+                withCredentials([
+                    string(credentialsId: 'DB_USER_NAME',   variable: 'DB_USER_NAME'),
+                    string(credentialsId: 'DB_PASSWORD',    variable: 'DB_PASSWORD'),
+                    string(credentialsId: 'DB_NAME',        variable: 'DB_NAME'),
+                    string(credentialsId: 'RDS_ENDPOINT',   variable: 'RDS_ENDPOINT')
+                ]) {
+                    sh '''
+                        set -e
+                        USERNAME=${DB_USER_NAME}
+                        PASSWORD=${DB_PASSWORD}
+                        DBNAME=${DB_NAME}
+                        RDS_ENDPOINT=${RDS_ENDPOINT}
+
+                        # Wait for ingress ALB hostname to be assigned by the ALB Controller
+                        echo "Waiting for ALB hostname from ingress..."
+                        LOAD_BALANCER=""
+                        for i in $(seq 1 20); do
+                            LOAD_BALANCER=$(kubectl get ingress clixx-ingress -n clixx \
+                                -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
+                            if [ -n "$LOAD_BALANCER" ];
+                            then
+                                echo "ALB hostname: $LOAD_BALANCER"
+                                break
+                            fi
+                            echo "Not ready yet, retrying in 15s..."
+                            sleep 15
+                        done
+
+                        # Guard against writing an empty host into wp_options
+                        if [ -z "$LOAD_BALANCER" ];
+                        then
+                            echo "ERROR: ALB hostname was never assigned, aborting DB update"
+                            exit 1
+                        fi
+
+                        #If load balancer hostname found then proceed to this    
+                        echo "use $DBNAME;" > $WORKSPACE/db.setup
+                        echo "UPDATE wp_options SET option_value = 'http://$LOAD_BALANCER' WHERE option_value LIKE 'http%';" >> $WORKSPACE/db.setup
+                        mysql -u $USERNAME --password=$PASSWORD -h $RDS_ENDPOINT -D $DBNAME < $WORKSPACE/db.setup
+                    '''
+                }
+            }
+        }
+
+    }
+}
+
+def getSonarPath() {
+    def SonarHome = tool name: 'Sonar-inst', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
+    return SonarHome
+}
+
+def getDockerPath() {
+    def DockerHome = tool name: 'docker-inst', type: 'dockerTool'
+    return DockerHome
+}
+
+def getTerraformPath() {
+    def tfHome = tool name: 'terraform-14', type: 'terraform'
+    return tfHome
+}
