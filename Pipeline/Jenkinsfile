@@ -97,15 +97,21 @@ pipeline {
                 slackSend(color: '#FFFF00', message: "CONFIGURE KUBECTL TO USE EKS CLUSTER by '${env.RUNNER}': Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")               
                     // Connect kubectl to the EKS cluster
                     sh '''
-                        set -e
                         STATE=$(aws s3 cp s3://mystatefile-clixxretail/eks/base-infrastructure/terraform.tfstate -)
                         CLUSTER_NAME=$(echo $STATE | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['outputs']['cluster_name']['value'])")
+
+                        # Install kubectl if not present
+                        command -v kubectl || (
+                            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+                            chmod +x kubectl
+                            sudo mv kubectl /usr/local/bin/kubectl
+                        )
 
                         aws eks update-kubeconfig \
                             --region us-east-2 \
                             --name ${CLUSTER_NAME}
                     '''
-                }
+            }
         }
        
         
