@@ -21,6 +21,27 @@ spec:
           image: DOCKER_IMAGE
           ports:
             - containerPort: 80
+          env:
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: clixx-config
+                  key: DB_NAME
+            - name: DB_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: clixx-config
+                  key: DB_USERNAME
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clixx-secrets
+                  key: db_password
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: clixx-secrets
+                  key: rds_endpoint
           resources:
             requests:
               memory: "128Mi"
@@ -32,11 +53,11 @@ spec:
             httpGet:
               path: /
               port: 80
-            initialDelaySeconds: 10
+            initialDelaySeconds: 60
             periodSeconds: 5
           livenessProbe:
             httpGet:
               path: /
               port: 80
-            initialDelaySeconds: 15
+            initialDelaySeconds: 90
             periodSeconds: 10
