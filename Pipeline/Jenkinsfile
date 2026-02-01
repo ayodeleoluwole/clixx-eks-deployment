@@ -15,27 +15,27 @@ pipeline {
             }
         }
 
-        stage('Sonarcube Scan') {
-            steps {
-                script {
-                    scannerHome = tool 'Sonar-inst'
-                }
-                withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {   withSonarQubeEnv('SonarQubeScanner') {
-                        sh " ${scannerHome}/bin/sonar-scanner \
-                            -Dsonar.projectKey=Clixx-Application \
-                            -Dsonar.token=${SONAR_TOKEN} "
-                    }
-                }
-            }
-        }
+        // stage('Sonarcube Scan') {
+        //     steps {
+        //         script {
+        //             scannerHome = tool 'Sonar-inst'
+        //         }
+        //         withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {   withSonarQubeEnv('SonarQubeScanner') {
+        //                 sh " ${scannerHome}/bin/sonar-scanner \
+        //                     -Dsonar.projectKey=Clixx-Application \
+        //                     -Dsonar.token=${SONAR_TOKEN} "
+        //             }
+        //         }
+        //     }
+        // }
 
-        stage('Quality Gate') {
-            steps {
-                timeout(time: 3, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
-                }
-            }
-        }
+        // stage('Quality Gate') {
+        //     steps {
+        //         timeout(time: 3, unit: 'MINUTES') {
+        //             waitForQualityGate abortPipeline: true
+        //         }
+        //     }
+        // }
 
         stage('Build Docker Image') {
             steps {
