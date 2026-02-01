@@ -124,13 +124,13 @@ pipeline {
 
                     # Injecting the ECR image URI into deployment.yaml at runtime
                     sed -i "s|DOCKER_IMAGE|${ECR_URI}:clixx-image-$VERSION|g" \
-                    clixx_eks_deployment/k8s/deployment.yaml
+                    k8s/deployment.yaml
 
                     # Apply all YAML files
-                    kubectl apply -f clixx_eks_deployment/k8s/namespace.yaml
-                    kubectl apply -f clixx_eks_deployment/k8s/deployment.yaml
-                    kubectl apply -f clixx_eks_deployment/k8s/service.yaml
-                    kubectl apply -f clixx_eks_deployment/k8s/ingress.yaml
+                    kubectl apply -f k8s/namespace.yaml
+                    kubectl apply -f k8s/deployment.yaml
+                    kubectl apply -f k8s/service.yaml
+                    kubectl apply -f k8s/ingress.yaml
 
                     # Wait for rollout to complete
                     kubectl rollout status deployment/clixx-app \
