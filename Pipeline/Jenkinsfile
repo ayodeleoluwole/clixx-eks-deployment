@@ -168,9 +168,9 @@ pipeline {
                         echo "EKS successfully deployed latest image"
                     '''
                 slackSend(color: '#FFFF00', message: "APPLICATION DEPLOYMENT COMPLETED by '${env.RUNNER}': Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")
+                }
             }
         }
-
 
         stage('Configure RDS Database for Production') {
             steps {
