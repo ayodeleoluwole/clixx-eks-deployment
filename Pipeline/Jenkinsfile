@@ -122,29 +122,51 @@ pipeline {
                 script {
                     def userInput = input(id: 'confirm', message: 'Deploy latest image to EKS?', parameters: [[$class: 'BooleanParameterDefinition', defaultValue: false, description: 'Deploy to EKS', name: 'confirm']])
                 }
-                sh '''
-                    set -e
-                    STATE=$(aws s3 cp s3://mystatefile-clixxretail/eks/base-infrastructure/terraform.tfstate -)
-                    ECR_URI=$(echo $STATE | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['outputs']['ecr_repository_url']['value'])")
+                withCredentials([
+                    string(credentialsId: 'DB_PASSWORD',    variable: 'DB_PASSWORD'),
+                    string(credentialsId: 'RDS_ENDPOINT',   variable: 'RDS_ENDPOINT')
+                ]) {
+
+                
+                    sh '''
+                        set -e
+                        STATE=$(aws s3 cp s3://mystatefile-clixxretail/eks/base-infrastructure/terraform.tfstate -)
+                        ECR_URI=$(echo $STATE | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['outputs']['ecr_repository_url']['value'])")
 
 
-                    # Injecting the ECR image URI into deployment.yaml at runtime
-                    sed -i "s|DOCKER_IMAGE|${ECR_URI}:clixx-image-$VERSION|g" \
-                    $WORKSPACE/k8s/deployment.yaml
+                        # Restore original files before injecting values. Only needed if i am not doing git trigger to trigger a fresh commit
+                        git checkout $WORKSPACE/k8s/secret.yaml
+                        git checkout $WORKSPACE/k8s/deployment.yaml
 
-                    # Apply all YAML files
-                    kubectl apply -f k8s/namespace.yaml
-                    kubectl apply -f k8s/deployment.yaml
-                    kubectl apply -f k8s/service.yaml
-                    kubectl apply -f k8s/ingress.yaml
+                        # Injecting the DB PASSWORD into secret.yaml at runtime
+                        sed -i "s|DB_PASSWORD_VALUE|${DB_PASSWORD}|g" \
+                        $WORKSPACE/k8s/secret.yaml
 
-                    # Wait for rollout to complete
-                    kubectl rollout status deployment/clixx-app \
-                        -n clixx \
-                        --timeout=120s
 
-                    echo "EKS successfully deployed latest image"
-                '''
+                        # Injecting the RDS ENDPOINT into secret.yaml at runtime
+                        sed -i "s|RDS_ENDPOINT_VALUE|${RDS_ENDPOINT}|g" \
+                        $WORKSPACE/k8s/secret.yaml
+
+                        # Injecting the ECR image URI into deployment.yaml at runtime
+                        sed -i "s|DOCKER_IMAGE|${ECR_URI}:clixx-image-$VERSION|g" \
+                        $WORKSPACE/k8s/deployment.yaml
+
+                        # Apply all YAML files
+                        kubectl apply -f k8s/namespace.yaml
+                        kubectl apply -f k8s/secret.yaml
+                        kubectl apply -f k8s/configmap.yaml
+                        kubectl apply -f k8s/deployment.yaml
+                        kubectl apply -f k8s/service.yaml
+                        kubectl apply -f k8s/ingress.yaml
+
+
+                        # Wait for rollout to complete
+                        kubectl rollout status deployment/clixx-app \
+                            -n clixx \
+                            --timeout=120s
+
+                        echo "EKS successfully deployed latest image"
+                    '''
                 slackSend(color: '#FFFF00', message: "APPLICATION DEPLOYMENT COMPLETED by '${env.RUNNER}': Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")
             }
         }
