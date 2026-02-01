@@ -79,7 +79,7 @@ pipeline {
                 }
                 sh '''
                     set -e
-                    STATE=$(aws s3 cp s3://mystatefile-clixxretail/eks/base_infra/terraform.tfstate -)
+                    STATE=$(aws s3 cp s3://mystatefile-clixxretail/eks/base-infrastructure/terraform.tfstate -)
                     ECR_URI=$(echo $STATE | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['outputs']['ecr_repository_url']['value'])")
 
                     aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin ${ECR_URI}
@@ -98,7 +98,7 @@ pipeline {
                     // Connect kubectl to the EKS cluster
                     sh '''
                         set -e
-                        STATE=$(aws s3 cp s3://mystatefile-clixxretail/eks/base_infra/terraform.tfstate -)
+                        STATE=$(aws s3 cp s3://mystatefile-clixxretail/eks/base-infrastructure/terraform.tfstate -)
                         CLUSTER_NAME=$(echo $STATE | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['outputs']['cluster_name']['value'])")
 
                         aws eks update-kubeconfig \
@@ -107,6 +107,7 @@ pipeline {
                     '''
                 }
         }
+       
         
 
         stage('Deploy to EKS') {
@@ -117,7 +118,7 @@ pipeline {
                 }
                 sh '''
                     set -e
-                    STATE=$(aws s3 cp s3://mystatefile-clixxretail/eks/base_infra/terraform.tfstate -)
+                    STATE=$(aws s3 cp s3://mystatefile-clixxretail/eks/base-infrastructure/terraform.tfstate -)
                     ECR_URI=$(echo $STATE | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['outputs']['ecr_repository_url']['value'])")
 
 
