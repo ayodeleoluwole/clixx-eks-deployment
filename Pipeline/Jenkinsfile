@@ -74,10 +74,7 @@ pipeline {
         stage('Log Into ECR and Push the Newly Created Docker') {
             steps {
                 slackSend(color: '#FFFF00', message: "PUSHING LATEST IMAGE TO ECR by '${env.RUNNER}': Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")
-                script {
-                    def userInput = input(id: 'confirm', message: 'Push Image To ECR?', parameters: [[$class: 'BooleanParameterDefinition', defaultValue: false, description: 'Push to ECR?', name: 'confirm']])
-                }
-                sh '''
+               sh '''
                     set -e
                     STATE=$(aws s3 cp s3://mystatefile-clixxretail/eks/base-infrastructure/terraform.tfstate -)
                     ECR_URI=$(echo $STATE | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['outputs']['ecr_repository_url']['value'])")
