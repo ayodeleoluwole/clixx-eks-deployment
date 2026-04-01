@@ -3,12 +3,19 @@ kind: Service
 metadata:
   name: clixx-app-service
   namespace: clixx
+  labels:
+    app: clixx-app
 spec:
   # ClusterIP only.traffic comes in through the Ingress/ALB
   type: ClusterIP
   selector:
     app: clixx-app
   ports:
-    - protocol: TCP
+    - name: http
+      protocol: TCP
       port: 80
       targetPort: 80
+    - name: metrics
+      protocol: TCP
+      port: 9117
+      targetPort: 9117
