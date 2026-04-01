@@ -1,0 +1,18 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: clixx-app-monitor
+  namespace: monitoring
+  labels:
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - clixx
+  selector:
+    matchLabels:
+      app: clixx-app
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
