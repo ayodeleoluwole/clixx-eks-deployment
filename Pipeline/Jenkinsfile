@@ -156,6 +156,8 @@ pipeline {
                         kubectl apply -f k8s/deployment.yaml
                         kubectl apply -f k8s/service.yaml
                         kubectl apply -f k8s/ingress.yaml
+                        kubectl apply -f k8s/servicemonitor.yaml
+                        kubectl apply -f k8s/monitoring-ingress.yaml
                     '''
                 }
                 slackSend(color: '#FFFF00', message: "APPLICATION DEPLOYMENT COMPLETED by '${env.RUNNER}': Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL})")
