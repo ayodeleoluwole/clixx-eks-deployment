@@ -61,3 +61,19 @@ spec:
               port: 80
             initialDelaySeconds: 90
             periodSeconds: 10
+        #sidecar for pods monitoring
+        - name: apache-metrics-sidecar
+          image: bitnami/apache-exporter:latest
+          args:
+            - "--scrape_uri=http://localhost/server-status/?auto"
+          ports:
+            - name: metrics
+              containerPort: 9117
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "25m"
+            limits:
+              memory: "64Mi"
+              cpu: "100m"
+      
